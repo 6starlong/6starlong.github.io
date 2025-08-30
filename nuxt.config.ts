@@ -3,7 +3,9 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
   ],
-  devtools: { enabled: true },
+  devtools: {
+    enabled: true,
+  },
   app: {
     head: {
       title: 'Starlong',
@@ -18,6 +20,7 @@ export default defineNuxtConfig({
       ],
     },
   },
+  compatibilityDate: '2025-08-27',
   eslint: {
     config: {
       stylistic: {

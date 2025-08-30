@@ -1,7 +1,7 @@
 {
   "name": "starlong",
-  "private": true,
   "type": "module",
+  "private": true,
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
@@ -12,13 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "nuxt": "^3.16.0",
-    "three": "^0.174.0"
+    "nuxt": "^4.0.3",
+    "three": "^0.179.1",
+    "vue": "^3.5.20"
   },
   "devDependencies": {
-    "@nuxt/eslint": "^1.2.0",
-    "eslint": "^9.22.0",
-    "typescript": "^5.8.2",
-    "vue-tsc": "^2.2.8"
+    "@nuxt/eslint": "^1.9.0",
+    "eslint": "^9.34.0",
+    "typescript": "^5.9.2",
+    "vue-tsc": "^3.0.6"
   }
 }

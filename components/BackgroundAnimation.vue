@@ -2,19 +2,18 @@
 import * as THREE from 'three'
 
 const container = ref(null)
-let scene, camera, renderer, animationFrameId
-let clock
-let grid, gridMaterial
-let starField
-let glowEffect
-let meteorSystem
+let scene, camera, renderer, animationFrameId, clock
+let grid, gridMaterial, starField, glowEffect, meteorSystem
 const decorativeObjects = []
 
 // 配置参数
-const gridExtent = 1000
-const STAR_COUNT = 8000
-const MAX_METEORS = 15
-const DECORATIVE_OBJECTS_COUNT = 25
+const CONFIG = {
+  gridExtent: 1000,
+  starCount: 8000,
+  maxMeteors: 10,
+  decorativeCount: 10,
+  fogDensity: 0.0015,
+}
 
 // 初始化Three.js场景
 function initThree() {
@@ -68,11 +67,11 @@ function createGrid() {
       time: { value: 0 },
       resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
       fogColor: { value: new THREE.Color(0x0a0e14) },
-      fogDensity: { value: 0.0015 },
+      fogDensity: { value: CONFIG.fogDensity },
     },
     vertexShader: `
       varying vec3 vPosition;
-      
+
       void main() {
         vPosition = position;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -83,38 +82,27 @@ function createGrid() {
       uniform vec2 resolution;
       uniform vec3 fogColor;
       uniform float fogDensity;
-      
+
       varying vec3 vPosition;
-      
-      float gridLine(float pos, float width) {
-        float halfWidth = width * 0.5;
-        return smoothstep(-halfWidth, halfWidth, pos) - smoothstep(halfWidth, halfWidth * 2.0, pos);
-      }
-      
+
       void main() {
-        // 使用更稳定的计算方式避免z轴线条闪烁
+        // 计算网格线
         float cellSize = 50.0;
-        float xLine = abs(fract(vPosition.x / cellSize + time * 0.4 + 0.5) - 0.5) / fwidth(vPosition.x) * cellSize;
-        float zLine = abs(fract(vPosition.z / cellSize + time * 0.4 + 0.5) - 0.5) / fwidth(vPosition.z) * cellSize;
-        xLine = 1.0 - min(xLine, 1.0);
-        zLine = 1.0 - min(zLine, 1.0);
-        
-        // 合并网格线
-        float line = max(xLine, zLine);
-        
+        vec2 grid = abs(fract(vPosition.xz / cellSize + time * 0.4) - 0.5) / fwidth(vPosition.xz) * cellSize;
+        float line = max(1.0 - min(grid.x, 1.0), 1.0 - min(grid.y, 1.0));
+
         // 根据距离调整亮度
         float dist = length(vPosition.xz);
         float brightness = 1.0 - smoothstep(0.0, 1000.0, dist);
-        
+
         // 计算颜色
-        vec3 baseColor = vec3(0.0);
         vec3 lineColor = mix(vec3(0.0, 0.8, 1.0), vec3(1.0, 0.2, 0.8), sin(time * 0.2) * 0.5 + 0.5);
-        vec3 color = mix(baseColor, lineColor, line * brightness);
-        
+        vec3 color = lineColor * line * brightness;
+
         // 应用雾效果
         float fogFactor = 1.0 - exp(-fogDensity * dist);
         color = mix(color, fogColor, fogFactor);
-        
+
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -123,7 +111,7 @@ function createGrid() {
   })
 
   // 创建网格平面
-  const geometry = new THREE.PlaneGeometry(gridExtent * 2, gridExtent * 2, 1, 1)
+  const geometry = new THREE.PlaneGeometry(CONFIG.gridExtent * 2, CONFIG.gridExtent * 2, 1, 1)
   geometry.rotateX(-Math.PI / 2)
 
   grid = new THREE.Mesh(geometry, gridMaterial)
@@ -133,12 +121,12 @@ function createGrid() {
 // 创建星空背景
 function createStarField() {
   const starGeometry = new THREE.BufferGeometry()
-  const starPositions = new Float32Array(STAR_COUNT * 3)
-  const starSizes = new Float32Array(STAR_COUNT)
-  const starColors = new Float32Array(STAR_COUNT * 3)
-  const starBrightness = new Float32Array(STAR_COUNT)
+  const starPositions = new Float32Array(CONFIG.starCount * 3)
+  const starSizes = new Float32Array(CONFIG.starCount)
+  const starColors = new Float32Array(CONFIG.starCount * 3)
+  const starBrightness = new Float32Array(CONFIG.starCount)
 
-  for (let i = 0; i < STAR_COUNT; i++) {
+  for (let i = 0; i < CONFIG.starCount; i++) {
     const i3 = i * 3
     // 使用半球分布算法，限制星星在上半部分
     const theta = 2 * Math.PI * Math.random()
@@ -234,7 +222,7 @@ function createGlowEffect() {
     },
     vertexShader: `
       varying vec2 vUv;
-      
+
       void main() {
         vUv = uv;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -247,12 +235,12 @@ function createGlowEffect() {
       uniform float phaseOffset3;
       uniform float phaseOffset4;
       varying vec2 vUv;
-      
+
       // 简单的噪声函数
       float noise(vec2 p) {
         return fract(sin(dot(p.xy, vec2(12.9898, 78.233))) * 43758.5453);
       }
-      
+
       // 改进的分形噪声函数
       float fbm(vec2 p) {
         float f = 0.0;
@@ -264,38 +252,38 @@ function createGlowEffect() {
         }
         return f;
       }
-      
+
       // 极光纹理函数
       float auroraPattern(vec2 p, float time) {
         float scale = 8.0;
         float t = time * 0.12;
         float result = 0.0;
-        
+
         // 多层次的波浪叠加
         result += sin(p.x * scale * 1.0 + t) * 0.5 + 0.5;
         result += sin(p.x * scale * 0.5 + t * 1.1 + 1.0) * 0.25 + 0.25;
         result *= sin(p.x * scale * 0.25 - t * 0.8) * 0.5 + 0.5;
-        
+
         // 垂直方向的扰动
         float vDisturb = sin(p.x * scale * 0.3 + t * 1.2) * sin(p.y * 2.0);
         result *= smoothstep(0.0, 1.0, vDisturb * 0.5 + 0.5);
-        
+
         return result;
       }
-      
+
       void main() {
         vec2 center = vUv - 0.5;
         float dist = length(center);
-        
+
         // 创建更自然的径向渐变
         float radialGradient = smoothstep(0.5, 0.12, dist);
-        
+
         // 更加活跃的脉动效果 - 添加随机相位
         float primaryPulse = (sin(time * 0.23 + phaseOffset1) * 0.5 + 0.5) * 0.18;
         float secondaryPulse = (sin(time * 0.41 + phaseOffset2 + 2.0) * 0.5 + 0.5) * 0.12;
         float tertiaryPulse = (sin(time * 0.11 + phaseOffset3 + 4.0) * 0.5 + 0.5) * 0.08;
         float fastPulse = (sin(time * 0.82 + phaseOffset4 + 1.5) * 0.5 + 0.5) * 0.05;
-        
+
         // 激活的极光颜色系统 - 保持深沉基础但增加更多变化
         vec3 color1 = vec3(0.04, 0.14, 0.20); // 深青蓝色
         vec3 color2 = vec3(0.06, 0.18, 0.09); // 深青绿色
@@ -303,54 +291,54 @@ function createGlowEffect() {
         vec3 color4 = vec3(0.16, 0.06, 0.02); // 深红橙色
         vec3 color5 = vec3(0.02, 0.15, 0.15); // 深青色
         vec3 color6 = vec3(0.15, 0.12, 0.02); // 深金色
-        
+
         // 非线性颜色混合 - 更加活跃的变化 - 添加随机相位
         float t1 = sin(time * 0.13 + phaseOffset1) * 0.5 + 0.5;
         float t2 = sin(time * 0.19 + phaseOffset2 + 1.5) * 0.5 + 0.5;
         float t3 = sin(time * 0.09 + phaseOffset3 + 3.0) * 0.5 + 0.5;
         float t4 = sin(time * 0.15 + phaseOffset4 + 5.0) * 0.5 + 0.5;
-        
+
         // 更复杂的颜色混合系统
         vec3 colorMix1 = mix(color1, color2, smoothstep(0.0, 1.0, t1));
         vec3 colorMix2 = mix(color3, color4, smoothstep(0.0, 1.0, t2));
         vec3 colorMix3 = mix(color5, color6, smoothstep(0.0, 1.0, t3));
-        
+
         vec3 colorA = mix(colorMix1, colorMix2, smoothstep(0.2, 0.8, t2));
         vec3 colorB = mix(colorMix2, colorMix3, smoothstep(0.3, 0.7, t3));
         vec3 baseColor = mix(colorA, colorB, smoothstep(0.1, 0.9, t4));
-        
+
         // 增强的分形噪声
         float noiseScale = 5.0 + sin(time * 0.2 + phaseOffset1) * 1.0;
         float noiseVal = fbm(center * noiseScale + time * 0.05);
         float noiseDetail = fbm(center * 12.0 - time * 0.03) * 0.3;
         noiseVal = noiseVal * 0.7 + noiseDetail;
-        
+
         // 极光纹理
         float aurora = auroraPattern(center + vec2(0.0, time * 0.05), time + phaseOffset2);
-        
+
         // 更复杂的颜色层次化
         vec3 color = baseColor;
-        
+
         // 增加高光区域
         float highlights = smoothstep(0.5, 0.8, noiseVal) * (0.2 + primaryPulse * 0.3);
         color += vec3(0.08, 0.15, 0.1) * highlights * radialGradient;
-        
+
         // 极光幕布效果
         float curtain = aurora * smoothstep(0.3, 0.0, dist);
         color += vec3(0.07, 0.1, 0.03) * curtain * (0.8 + fastPulse);
-        
+
         // 颜色强化
         color = mix(color, color * 1.2, noiseVal * (0.4 + tertiaryPulse));
-        
+
         // 计算透明度
         float alpha = radialGradient * (0.1 + primaryPulse + secondaryPulse + tertiaryPulse + fastPulse * 0.8);
-        
+
         // 边缘处理
         alpha *= smoothstep(1.0, 0.5, dist);
-        
+
         // 增加边缘的噪声变化
         alpha *= 0.7 + noiseVal * 0.4 + aurora * 0.2;
-        
+
         gl_FragColor = vec4(color, alpha);
       }
     `,
@@ -363,6 +351,7 @@ function createGlowEffect() {
   glowEffect = new THREE.Mesh(glowGeometry, glowMaterial)
   glowEffect.position.y = 50
   glowEffect.rotation.x = -Math.PI / 2 - 0.06
+
   scene.add(glowEffect)
 }
 
@@ -425,7 +414,7 @@ function createMeteorSystem() {
           attribute float alpha;
           varying float vAlpha;
           varying vec2 vUv;
-          
+
           void main() {
             vAlpha = alpha;
             vUv = position.xy * 0.01;
@@ -438,35 +427,35 @@ function createMeteorSystem() {
           uniform float time;
           varying float vAlpha;
           varying vec2 vUv;
-          
+
           // 扰动函数
           float noise(vec2 p) {
             return fract(sin(dot(p.xy, vec2(12.9898, 78.233))) * 43758.5453);
           }
-          
+
           void main() {
             // 尾迹渐变核心
             float coreGlow = smoothstep(0.0, 0.4, vAlpha) * vAlpha * 2.0;
-            
+
             // 增加随机扰动效果，模拟大气阻力和微小颗粒
             float distortion = noise(vUv + time * 0.1) * 0.08;
-            
+
             // 创建更复杂的发光效果
             vec3 baseGlow = mix(color, vec3(1.0), 0.4);
-            
+
             // 添加颜色渐变 - 头部偏白，尾部保持原色
             vec3 finalColor = mix(baseGlow, vec3(1.0, 0.95, 0.85), coreGlow * 0.7);
-            
+
             // 添加轻微的蓝色/青色边缘，模拟热效应
             finalColor += vec3(0.0, 0.2, 0.5) * (1.0 - vAlpha) * 0.2;
-            
+
             // 计算最终不透明度，包含扰动效果
             float opacity = vAlpha * globalOpacity * (1.0 + distortion);
-            
+
             // 增强尾迹边缘发光感
             float edgeGlow = smoothstep(0.4, 0.0, vAlpha) * 0.3;
             opacity += edgeGlow * globalOpacity;
-            
+
             gl_FragColor = vec4(finalColor, opacity);
           }
         `,
@@ -545,16 +534,16 @@ function createMeteorSystem() {
       }
 
       // 最大数量限制
-      if (this.meteors.length >= MAX_METEORS) {
+      if (this.meteors.length >= CONFIG.maxMeteors) {
         baseProbability = 0
-      } else if (this.meteors.length > MAX_METEORS * 0.7) {
+      } else if (this.meteors.length > CONFIG.maxMeteors * 0.7) {
         // 如果流星已经较多，降低生成概率
         baseProbability *= 0.5
       }
 
       // 偶尔的流星雨事件 (约每60-120秒一次)
       const meteorShowerEvent = Math.sin(time * 0.01) > 0.95
-      if (meteorShowerEvent && this.meteors.length < MAX_METEORS * 0.8) {
+      if (meteorShowerEvent && this.meteors.length < CONFIG.maxMeteors * 0.8) {
         baseProbability *= 3 // 流星雨期间大幅提高概率
       }
 
@@ -594,32 +583,65 @@ function createDecorativeObjects() {
     new THREE.IcosahedronGeometry(3),
   ]
 
-  for (let i = 0; i < DECORATIVE_OBJECTS_COUNT; i++) {
-    const geometry = shapes[Math.floor(Math.random() * shapes.length)]
+  // 分布配置
+  const distributions = [
+    { prob: 0.25, distance: [100, 200], size: [2.2, 3.2] }, // 近景
+    { prob: 0.65, distance: [150, 290], size: [1.8, 2.6] }, // 中景
+    { prob: 1.0, distance: [250, 430], size: [1.4, 2.2] }, // 远景
+  ]
+
+  for (let i = 0; i < CONFIG.decorativeCount; i++) {
+    const rand = Math.random()
+    const dist = distributions.find(d => rand < d.prob)
+
+    // 随机参数
+    const distance = dist.distance[0] + Math.random() * (dist.distance[1] - dist.distance[0])
+    const size = dist.size[0] + Math.random() * (dist.size[1] - dist.size[0])
+    const angle = Math.random() * Math.PI * 2
+
+    // 位置计算
+    const x = Math.sin(angle) * distance
+    const y = Math.random() * 180 - 20 // -20到180，覆盖相机视野的上下范围
+    const z = Math.cos(angle) * distance - 80
+
+    // 几何体和材质
+    const baseGeometry = shapes[Math.floor(Math.random() * shapes.length)]
+    const geometry = baseGeometry.clone().scale(size, size, size)
+
+    const distanceFromCamera = Math.sqrt(x * x + (z + 100) * (z + 100))
+    const opacity = Math.max(0.3, 1 - distanceFromCamera / 500) * (0.4 + Math.random() * 0.4)
+
     const material = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(Math.random(), 0.8, 0.6),
+      color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
       wireframe: true,
+      transparent: true,
+      opacity,
     })
 
     const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(
-      (Math.random() - 0.5) * 400,
-      Math.random() * 100 + 50,
-      (Math.random() - 0.5) * 400,
-    )
-    mesh.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI,
-      Math.random() * Math.PI,
-    )
-    mesh.userData.rotationSpeed = {
-      x: (Math.random() - 0.5) * 0.01,
-      y: (Math.random() - 0.5) * 0.01,
-      z: (Math.random() - 0.5) * 0.01,
+    mesh.position.set(x, y, z)
+    mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI)
+
+    // 运动参数
+    mesh.userData = {
+      rotationSpeed: {
+        x: (Math.random() - 0.5) * 0.01,
+        y: (Math.random() - 0.5) * 0.01,
+        z: (Math.random() - 0.5) * 0.01,
+      },
+      initialPosition: mesh.position.clone(),
+      floatOffset: Math.random() * Math.PI * 2,
+      floatAmplitude: {
+        x: Math.random() * 8 + 2,
+        y: Math.random() * 6 + 1,
+        z: Math.random() * 8 + 2,
+      },
+      driftFreq: {
+        x: Math.random() * 0.3 + 0.2,
+        y: Math.random() * 0.4 + 0.3,
+        z: Math.random() * 0.25 + 0.15,
+      },
     }
-    mesh.userData.floatSpeed = Math.random() * 0.3 + 0.2
-    mesh.userData.floatOffset = Math.random() * Math.PI * 2
-    mesh.userData.floatRange = Math.random() * 10 + 5
 
     decorativeObjects.push(mesh)
     scene.add(mesh)
@@ -630,36 +652,30 @@ function createDecorativeObjects() {
 function updateScene() {
   const time = clock.getElapsedTime()
 
-  // 更新网格材质
-  if (gridMaterial) {
-    gridMaterial.uniforms.time.value = time
-  }
-
-  // 更新星空
-  if (starField) {
-    starField.material.uniforms.time.value = time
-  }
-
-  // 更新光晕效果
-  if (glowEffect) {
-    glowEffect.material.uniforms.time.value = time
-  }
+  // 更新所有材质的time uniform
+  const materials = [gridMaterial, starField?.material, glowEffect?.material]
+  materials.forEach(mat => mat && (mat.uniforms.time.value = time))
 
   // 更新流星系统
-  if (meteorSystem) {
-    meteorSystem.update()
-  }
+  meteorSystem?.update()
 
   // 更新装饰性几何体
   decorativeObjects.forEach((obj) => {
-    obj.rotation.x += obj.userData.rotationSpeed.x
-    obj.rotation.y += obj.userData.rotationSpeed.y
-    obj.rotation.z += obj.userData.rotationSpeed.z
+    const { rotationSpeed, initialPosition, floatOffset, floatAmplitude, driftFreq } = obj.userData
+    const timeOffset = time + floatOffset
 
-    obj.position.y = obj.position.y + Math.sin(time * obj.userData.floatSpeed + obj.userData.floatOffset) * 0.5
+    // 旋转
+    obj.rotation.x += rotationSpeed.x
+    obj.rotation.y += rotationSpeed.y
+    obj.rotation.z += rotationSpeed.z
+
+    // 三维漂浮运动
+    obj.position.x = initialPosition.x + Math.sin(timeOffset * driftFreq.x) * floatAmplitude.x
+    obj.position.y = initialPosition.y + Math.sin(timeOffset * driftFreq.y) * floatAmplitude.y
+    obj.position.z = initialPosition.z + Math.cos(timeOffset * driftFreq.z) * floatAmplitude.z
   })
 
-  // 相机轻微运动
+  // 相机运动
   camera.position.y = 40 + Math.sin(time * 0.3) * 3
   camera.position.x = Math.sin(time * 0.1) * 15
   camera.position.z = 100 + Math.cos(time * 0.07) * 10
@@ -668,9 +684,7 @@ function updateScene() {
 // 动画循环
 function animate() {
   animationFrameId = requestAnimationFrame(animate)
-
   updateScene()
-
   renderer.render(scene, camera)
 }
 
@@ -679,10 +693,7 @@ function handleResize() {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
-
-  if (gridMaterial) {
-    gridMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight)
-  }
+  gridMaterial?.uniforms.resolution.value.set(window.innerWidth, window.innerHeight)
 }
 
 onMounted(() => {
@@ -692,48 +703,29 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId)
+  if (animationFrameId) cancelAnimationFrame(animationFrameId)
+
+  // 清理资源
+  const cleanupMesh = (mesh, material) => {
+    if (mesh) {
+      scene.remove(mesh)
+      mesh.geometry.dispose()
+      if (material) material.dispose()
+    }
   }
 
-  // 清理网格
-  if (grid) {
-    scene.remove(grid)
-    grid.geometry.dispose()
-    gridMaterial.dispose()
-  }
+  cleanupMesh(grid, gridMaterial)
+  cleanupMesh(starField, starField?.material)
+  cleanupMesh(glowEffect, glowEffect?.material)
 
-  // 清理星空
-  if (starField) {
-    scene.remove(starField)
-    starField.geometry.dispose()
-    starField.material.dispose()
-  }
-
-  // 清理光晕效果
-  if (glowEffect) {
-    scene.remove(glowEffect)
-    glowEffect.geometry.dispose()
-    glowEffect.material.dispose()
-  }
-
-  // 清理所有流星
-  if (meteorSystem && meteorSystem.meteors) {
-    meteorSystem.meteors.forEach((meteor) => {
-      scene.remove(meteor)
-      meteor.geometry.dispose()
-      meteor.material.dispose()
-    })
-  }
-
-  // 清理装饰性几何体
-  decorativeObjects.forEach((obj) => {
-    scene.remove(obj)
-    obj.geometry.dispose()
-    obj.material.dispose()
+  meteorSystem?.meteors.forEach((meteor) => {
+    cleanupMesh(meteor, meteor.material)
   })
 
-  // 清理渲染器
+  decorativeObjects.forEach((obj) => {
+    cleanupMesh(obj, obj.material)
+  })
+
   if (renderer) {
     renderer.dispose()
     container.value.removeChild(renderer.domElement)
